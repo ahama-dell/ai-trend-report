@@ -2,8 +2,8 @@
 
 ## 목표
 매주 일요일 20:00(KST)에 실행되어, AI 분야 유튜브 톱 채널의 이번 주 인기 콘텐츠를 분석하고,
-데이터 기반 트렌드 요약과 콘텐츠 주제 추천을 담은 브랜드 PDF 리포트를 만들어 Gmail로 발송하고,
-모든 원본 데이터를 Notion에 누적 저장한다.
+데이터 기반 트렌드 요약과 콘텐츠 주제 추천을 담은 브랜드 PDF 리포트를 만들어 Google Drive에
+올리고 그 링크를 Gmail로 발송하며, 모든 원본 데이터를 Notion에 누적 저장한다.
 
 ## 사전 조건
 - `.env`에 `YOUTUBE_API_KEY` 설정되어 있어야 함
@@ -77,17 +77,36 @@ Top 10 영상 표, 콘텐츠 주제 추천 순). 차트는 reportlab 벡터 드�
 6단계에서 base64로 옮기는 과정에 데이터가 손상되는 문제가 있었다. 이 스크립트를 수정해서
 다시 래스터 이미지(PNG/JPEG)를 넣지 말 것.
 
-### 6. Gmail 발송
-`.tmp/weekly_ai_trend_report.pdf`를 base64로 읽어 `mcp__claude_ai_Gmail__send_message`로 발송.
-- to: `chnsk.ahn@gmail.com`
-- subject: `주간 AI 트렌드 리포트 - {오늘 날짜 YYYY-MM-DD}`
-- body: 이번 주 요약 3줄 정도
-- attachments: 위 PDF (mimeType `application/pdf`)
+### 6. Google Drive 업로드 & Gmail 발송 (링크 방식 — PDF를 이메일에 직접 첨부하지 않음)
+
+**왜 첨부가 아니라 링크인가:** PDF를 Gmail에 직접 첨부하려면 파일 전체를 base64 텍스트로
+바꿔서 그 텍스트를 통째로 하나의 도구 호출 인자로 만들어야 한다. 이 텍스트는 4만 자가
+넘는, 사람이 읽을 수 없는 무작위에 가까운 문자열이라, 실행 중인 모델이 그걸 완벽하게
+재현하지 못하고 몇 글자씩 틀리는 사고가 실제로 여러 번 있었다 (Gmail 첨부 자체가 30분
+넘게 걸리거나 손상된 채로 보내질 뻔한 적도 있음). Drive에 올리고 이메일엔 짧은 링크만
+넣으면, 그 이후 사람이 보는 이메일 본문에는 이 위험한 텍스트가 전혀 남지 않는다.
+
+**절차:**
+1. PDF를 base64로 인코딩: `base64 -w0 .tmp/weekly_ai_trend_report.pdf > .tmp/report_b64.txt`
+2. **한 번의 `Read` 호출로 파일 전체를 한 번에 읽는다** (`limit`을 파일 글자 수보다 크게
+   설정). **여러 조각으로 나눠 읽은 뒤 다른 파일에 손으로 재조립하지 말 것** — 이게 바로
+   과거에 30분 넘게 걸리고 실패까지 했던 원인이다. 한 번에 읽은 값을 그대로 다음 단계에
+   전달하면 충분하다.
+3. 읽은 내용을 그대로 `mcp__Google-Drive__create_file`에 전달해서 업로드:
+   - title: `주간 AI 트렌드 리포트 - {오늘 날짜 YYYY-MM-DD}.pdf`
+   - base64Content: (2번에서 읽은 문자열 그대로, 다시 타이핑하거나 요약하지 말 것)
+   - contentMimeType: `application/pdf`
+   - disableConversionToGoogleType: `true` (구글 문서로 자동 변환되지 않게)
+4. 업로드 응답에서 파일 id를 받아 보기 링크를 만든다: `https://drive.google.com/file/d/<fileId>/view`
+5. `mcp__Gmail__send_message`로 발송 (첨부파일 없음):
+   - to: `chnsk.ahn@gmail.com`
+   - subject: `주간 AI 트렌드 리포트 - {오늘 날짜 YYYY-MM-DD}`
+   - body: 이번 주 요약 3줄 + "전체 리포트: {4번의 링크}"
 
 ## 실패 시
 - YouTube API 쿼터 초과(403 quotaExceeded) → 태평양시 기준 자정 이후 재시도 안내, 이번 주는 건너뛴다
 - 특정 채널에 이번 주 신규 영상이 없어도 정상 동작 (해당 채널만 스킵)
-- Notion/Gmail 호출 실패 → 재시도하지 않고 에러 내용을 그대로 사용자에게 보고
-- Gmail 첨부(base64) 전송 후 의심스러우면(특히 실패를 여러 번 재시도했다면) 원본 PDF를
-  base64로 인코딩한 뒤 보낸 내용과 바이트 단위로 비교해서 손상 여부를 확인할 것 — 손상된
-  파일을 억지로 보내지 말고, 확인이 안 되면 실패로 보고할 것
+- Notion/Gmail/Drive 호출 실패 → 재시도하지 않고 에러 내용을 그대로 사용자에게 보고
+- Drive 업로드 후 의심스러우면(특히 재시도를 여러 번 했다면) 업로드된 파일을
+  `mcp__Google-Drive__download_file_content`나 `get_file_metadata`로 다시 확인해서
+  손상 여부를 점검할 것 — 손상된 파일 링크를 그대로 보내지 말고, 확인이 안 되면 실패로 보고
