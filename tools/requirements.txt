@@ -1,0 +1,4 @@
+requests
+reportlab
+matplotlib
+python-dotenv
