@@ -13,7 +13,7 @@ from youtube_client import get_channel_stats, search_channels  # noqa: E402
 TMP_DIR = Path(__file__).resolve().parents[1] / ".tmp"
 CACHE_FILE = TMP_DIR / "known_channels.json"
 
-SEARCH_KEYWORDS = ["AI", "LLM", "AI agent", "generative AI", "ChatGPT"]
+SEARCH_KEYWORDS = ["Claude AI 업무자동화", "ChatGPT 업무자동화", "제미나이 생태계"]
 TOP_N = 15
 
 

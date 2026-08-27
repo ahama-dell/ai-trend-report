@@ -22,7 +22,11 @@ python tools/fetch_weekly_videos.py
 ```
 `.tmp/weekly_videos.json` 생성. 내부적으로 `discover_channels.py`가 톱 채널을
 발굴/캐싱(`.tmp/known_channels.json`)하고, YouTube Data API로 최근 7일 영상과
-조회수/좋아요/댓글수를 가져온다.
+조회수/좋아요/댓글수를 가져온다. 3분(180초) 이하 영상은 숏폼으로 보고 제외하며,
+채널 발굴 키워드는 `discover_channels.py`의 `SEARCH_KEYWORDS`에서 관리한다
+(현재: "Claude AI 업무자동화", "ChatGPT 업무자동화", "제미나이 생태계" — 단일 단어
+"Claude"/"Gemini"는 사람 이름·음악 채널과 겹쳐 노이즈가 컸던 경험이 있어 구체적인
+문구로 구성했다).
 
 ### 2. 주제 분석 & 추천 작성 (LLM 추론 단계 — 스크립트 아님)
 `.tmp/weekly_videos.json`의 영상 제목/설명을 읽고 직접 판단해서:

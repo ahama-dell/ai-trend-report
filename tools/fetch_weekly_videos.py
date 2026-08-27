@@ -11,6 +11,9 @@ from youtube_client import get_playlist_video_ids, get_video_stats  # noqa: E402
 TMP_DIR = Path(__file__).resolve().parents[1] / ".tmp"
 OUTPUT_FILE = TMP_DIR / "weekly_videos.json"
 
+# YouTube는 최대 3분짜리 영상도 Shorts로 취급할 수 있어, 이 기준(초) 이하는 숏폼으로 보고 제외한다.
+SHORTS_MAX_SECONDS = 180
+
 
 def engagement_score(video: dict) -> float:
     """조회수 대비 좋아요+댓글 비율 (댓글에 가중치 2배) x 1000."""
@@ -28,6 +31,7 @@ def fetch_weekly_videos(days: int = 7) -> dict:
         all_video_ids.extend(video_ids)
 
     videos = get_video_stats(all_video_ids) if all_video_ids else []
+    videos = [v for v in videos if v["durationSeconds"] > SHORTS_MAX_SECONDS]
     for v in videos:
         v["engagementScore"] = round(engagement_score(v), 3)
     videos.sort(key=lambda v: v["viewCount"], reverse=True)

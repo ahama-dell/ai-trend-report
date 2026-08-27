@@ -4,6 +4,7 @@
 최대 50개 배치). search는 신규 채널 발굴에만 아껴서 쓰고, 나머지는 1유닛 호출로 처리한다.
 """
 import os
+import re
 from pathlib import Path
 
 import requests
@@ -12,6 +13,17 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 API_BASE = "https://www.googleapis.com/youtube/v3"
+
+_DURATION_RE = re.compile(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?")
+
+
+def _parse_duration_seconds(iso_duration: str) -> int:
+    """ISO 8601 duration (e.g. 'PT4M13S') -> seconds."""
+    match = _DURATION_RE.fullmatch(iso_duration or "")
+    if not match:
+        return 0
+    hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
+    return hours * 3600 + minutes * 60 + seconds
 
 
 class YouTubeAPIError(RuntimeError):
@@ -93,7 +105,7 @@ def get_video_stats(video_ids: list[str]) -> list[dict]:
         batch = video_ids[i : i + 50]
         if not batch:
             continue
-        data = _request("videos", {"part": "snippet,statistics", "id": ",".join(batch)})
+        data = _request("videos", {"part": "snippet,statistics,contentDetails", "id": ",".join(batch)})
         for item in data.get("items", []):
             s = item["statistics"]
             videos.append(
@@ -107,6 +119,7 @@ def get_video_stats(video_ids: list[str]) -> list[dict]:
                     "viewCount": int(s.get("viewCount", 0)),
                     "likeCount": int(s.get("likeCount", 0)),
                     "commentCount": int(s.get("commentCount", 0)),
+                    "durationSeconds": _parse_duration_seconds(item["contentDetails"]["duration"]),
                     "url": f"https://www.youtube.com/watch?v={item['id']}",
                 }
             )
