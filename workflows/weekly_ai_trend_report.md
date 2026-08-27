@@ -58,13 +58,24 @@ python tools/notion_sync.py
 `.tmp/notion_pages.json`의 각 항목을 `notion-create-pages` 툴로 전송한다.
 - parent: `{"type": "data_source_id", "data_source_id": "<NOTION_DATA_SOURCE_ID>"}`
 - 같은 영상(URL property 기준)이 이미 존재하면 skip — `notion-query-data-sources`로 먼저 확인
+- **알려진 함정 (매번 새로 겪지 않도록 미리 적어둠):**
+  - `notion_pages.json`의 `"URL"` 키는 `notion-create-pages` 호출 시 그대로 쓰면 400 에러가 난다.
+    이 DB에서 "URL" 속성의 실제 데이터소스 키는 **`"userDefined:URL"`** 이다 — 보내기 전에
+    `notion_pages.json`을 읽어 키 이름을 `URL` → `userDefined:URL`로 바꿔서 보낼 것.
+  - `"Topic"` 속성은 MULTI_SELECT이고 DB 생성 시 정해둔 옵션만 허용한다:
+    `에이전트`, `이미지 생성`, `로컬 LLM`, `멀티모달`, `코딩 어시스턴트`, `기타`.
+    분석 단계(2단계)에서 만든 자유 형식 주제명은 이 6개 중 가장 가까운 것으로 매핑해서 보낼 것
+    (PDF 리포트 자체에는 원래의 세분화된 주제명을 그대로 써도 됨 — 매핑은 Notion 전송용).
 
 ### 5. PDF 리포트 생성
 ```
 python tools/generate_report.py
 ```
 `.tmp/weekly_ai_trend_report.pdf` 생성 (표지, 이번 주 요약, 주제별 조회수 차트,
-Top 10 영상 표, 콘텐츠 주제 추천 순).
+Top 10 영상 표, 콘텐츠 주제 추천 순). 차트는 reportlab 벡터 드로잉으로 그린다 —
+과거에 matplotlib PNG 이미지를 썼을 때, 압축된 이미지 데이터의 반복 바이트 패턴 때문에
+6단계에서 base64로 옮기는 과정에 데이터가 손상되는 문제가 있었다. 이 스크립트를 수정해서
+다시 래스터 이미지(PNG/JPEG)를 넣지 말 것.
 
 ### 6. Gmail 발송
 `.tmp/weekly_ai_trend_report.pdf`를 base64로 읽어 `mcp__claude_ai_Gmail__send_message`로 발송.
@@ -77,3 +88,6 @@ Top 10 영상 표, 콘텐츠 주제 추천 순).
 - YouTube API 쿼터 초과(403 quotaExceeded) → 태평양시 기준 자정 이후 재시도 안내, 이번 주는 건너뛴다
 - 특정 채널에 이번 주 신규 영상이 없어도 정상 동작 (해당 채널만 스킵)
 - Notion/Gmail 호출 실패 → 재시도하지 않고 에러 내용을 그대로 사용자에게 보고
+- Gmail 첨부(base64) 전송 후 의심스러우면(특히 실패를 여러 번 재시도했다면) 원본 PDF를
+  base64로 인코딩한 뒤 보낸 내용과 바이트 단위로 비교해서 손상 여부를 확인할 것 — 손상된
+  파일을 억지로 보내지 말고, 확인이 안 되면 실패로 보고할 것
