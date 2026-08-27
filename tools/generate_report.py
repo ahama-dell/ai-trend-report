@@ -9,19 +9,15 @@ import json
 from datetime import date
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.font_manager as fm  # noqa: E402
-import matplotlib.pyplot as plt  # noqa: E402
-from reportlab.lib import colors  # noqa: E402
-from reportlab.lib.pagesizes import A4  # noqa: E402
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet  # noqa: E402
-from reportlab.lib.units import cm  # noqa: E402
-from reportlab.pdfbase import pdfmetrics  # noqa: E402
-from reportlab.pdfbase.ttfonts import TTFont  # noqa: E402
-from reportlab.platypus import (  # noqa: E402
-    Image,
+from reportlab.graphics.charts.barcharts import HorizontalBarChart
+from reportlab.graphics.shapes import Drawing
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -47,8 +43,8 @@ DARK_TEXT = colors.HexColor("#1A1A2E")
 ROW_ALT_COLOR = colors.HexColor("#F5F5FA")
 
 
-def _register_fonts() -> fm.FontProperties:
-    """한글 지원 폰트를 reportlab/matplotlib 양쪽에 등록한다.
+def _register_fonts() -> None:
+    """한글 지원 폰트를 reportlab에 등록한다.
 
     시스템 폰트에 의존하면 로컬(Windows)과 클라우드(Linux) 실행 환경에서
     렌더링이 달라지므로, 폰트 파일을 프로젝트에 번들링해 고정한다.
@@ -56,8 +52,6 @@ def _register_fonts() -> fm.FontProperties:
     pdfmetrics.registerFont(TTFont(FONT_REGULAR, str(FONT_REGULAR_PATH)))
     pdfmetrics.registerFont(TTFont(FONT_BOLD, str(FONT_BOLD_PATH)))
     pdfmetrics.registerFontFamily(FONT_REGULAR, normal=FONT_REGULAR, bold=FONT_BOLD)
-    fm.fontManager.addfont(str(FONT_REGULAR_PATH))
-    return fm.FontProperties(fname=str(FONT_REGULAR_PATH))
 
 
 def _load(path: Path) -> dict:
@@ -66,26 +60,47 @@ def _load(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _topic_chart(topics: list[dict], font_prop: fm.FontProperties) -> Path:
-    names = [t["name"] for t in topics]
-    views = [t["total_views"] for t in topics]
-    fig, ax = plt.subplots(figsize=(6, 3.2))
-    ax.barh(names[::-1], views[::-1], color="#5B4FE9")
-    ax.set_yticks(range(len(names)))
-    ax.set_yticklabels(names[::-1], fontproperties=font_prop)
-    ax.set_xlabel("Total Views", fontproperties=font_prop)
-    ax.spines[["top", "right"]].set_visible(False)
-    fig.tight_layout()
-    chart_path = TMP_DIR / "topic_chart.png"
-    fig.savefig(chart_path, dpi=150)
-    plt.close(fig)
-    return chart_path
+def _topic_chart(topics: list[dict]) -> Drawing:
+    """주제별 조회수 막대그래프를 래스터 이미지가 아닌 PDF 벡터 드로잉으로 그린다.
+
+    matplotlib PNG를 쓰던 예전 버전은, 단색 배경이 많은 차트 이미지의 압축 데이터에
+    반복되는 바이트 패턴이 많아서 Gmail 첨부(base64 변환) 과정에서 데이터가
+    미묘하게 손상되는 문제가 있었다. 벡터 드로잉은 그런 반복 바이트 블록 자체가
+    생기지 않아 이 문제를 근본적으로 피한다.
+    """
+    names = list(reversed([t["name"] for t in topics]))
+    views = list(reversed([t["total_views"] for t in topics]))
+
+    width, height = 420, 60 + 28 * len(names)
+    drawing = Drawing(width, height)
+
+    chart = HorizontalBarChart()
+    chart.x = 130
+    chart.y = 20
+    chart.width = width - 160
+    chart.height = height - 40
+    chart.data = [views]
+    chart.categoryAxis.categoryNames = names
+    chart.categoryAxis.labels.fontName = FONT_REGULAR
+    chart.categoryAxis.labels.fontSize = 8
+    chart.valueAxis.valueMin = 0
+    chart.valueAxis.labels.fontName = FONT_REGULAR
+    chart.valueAxis.labels.fontSize = 7
+    chart.bars[0].fillColor = ACCENT_COLOR
+    chart.bars.strokeColor = None
+    chart.barLabelFormat = lambda v: f"{v:,.0f}"
+    chart.barLabels.fontName = FONT_REGULAR
+    chart.barLabels.fontSize = 7
+    chart.barLabels.nudge = 8
+
+    drawing.add(chart)
+    return drawing
 
 
 def build_report() -> Path:
     videos_data = _load(VIDEOS_FILE)
     analysis = _load(ANALYSIS_FILE)
-    font_prop = _register_fonts()
+    _register_fonts()
 
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
@@ -118,8 +133,7 @@ def build_report() -> Path:
     topics = analysis.get("topics", [])
     if topics:
         story.append(Paragraph("주제별 인기도", h2_style))
-        chart_path = _topic_chart(topics, font_prop)
-        story.append(Image(str(chart_path), width=15 * cm, height=8 * cm))
+        story.append(_topic_chart(topics))
 
     top_videos = videos_data["videos"][:10]
     if top_videos:
