@@ -1,3 +1,4 @@
 requests
 reportlab
 python-dotenv
+pillow>=11
